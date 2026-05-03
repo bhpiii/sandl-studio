@@ -15,26 +15,18 @@
     background-size:cover; background-position:center center; background-repeat:no-repeat;
   }
   canvas#ripple { position:fixed; inset:0; width:100%; height:100%; z-index:1; pointer-events:none; }
-  .cursor {
-    position:fixed; width:4px; height:4px;
-    background:#2a2a2a; border-radius:50%;
-    pointer-events:none; z-index:100;
-    transform:translate(-50%,-50%);
-  }
+  .cursor { position:fixed; width:4px; height:4px; background:#2a2a2a; border-radius:50%; pointer-events:none; z-index:100; transform:translate(-50%,-50%); }
   .content { position:fixed; bottom:9vh; left:5vw; z-index:10; max-width:400px; }
   .sandl-wordmark { display:block; height:30px; width:auto; margin-bottom:1.1rem; }
   .blurb { font-size:12px; font-weight:400; color:#2a2a2a; line-height:1.75; max-width:380px; }
   .logo-mark { position:fixed; bottom:7vh; right:4vw; z-index:10; height:95px; width:auto; pointer-events:none; }
-
   .audio-hint {
     position:fixed; bottom:calc(env(safe-area-inset-bottom,0px) + 18px); left:50%;
     transform:translateX(-50%);
-    font-size:9px; color:#bbb; letter-spacing:0.1em;
-    z-index:10; pointer-events:none;
+    font-size:9px; color:#bbb; letter-spacing:0.1em; z-index:10; pointer-events:none;
     opacity:1; transition:opacity 1.5s ease;
   }
   .audio-hint.hidden { opacity:0; }
-
   @media (max-width:600px) {
     body { cursor:auto; }
     .cursor { display:none; }
@@ -70,64 +62,91 @@ window.addEventListener('resize', resize);
 // --- Audio ---
 let audioCtx = null;
 let audioReady = false;
+let masterGain = null;
 
 function initAudio() {
   if (audioReady) return;
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Master gain — keep everything very quiet
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.18;
+
+  // Reverb-like convolver for spaciousness
+  const convolver = audioCtx.createConvolver();
+  const reverbLen = audioCtx.sampleRate * 2.5;
+  const reverbBuf = audioCtx.createBuffer(2, reverbLen, audioCtx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = reverbBuf.getChannelData(c);
+    for (let i = 0; i < reverbLen; i++) {
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / reverbLen, 2.5);
+    }
+  }
+  convolver.buffer = reverbBuf;
+
+  // Dry/wet mix
+  const dryGain = audioCtx.createGain();
+  dryGain.gain.value = 0.3;
+  const wetGain = audioCtx.createGain();
+  wetGain.gain.value = 0.7;
+
+  masterGain.connect(dryGain);
+  masterGain.connect(convolver);
+  convolver.connect(wetGain);
+  dryGain.connect(audioCtx.destination);
+  wetGain.connect(audioCtx.destination);
+
   audioReady = true;
   const hint = document.getElementById('audioHint');
   hint.classList.add('hidden');
   setTimeout(() => hint.style.display = 'none', 1600);
 }
 
-function playRippleSound() {
+function playDroplet() {
   if (!audioReady || !audioCtx) return;
-
   const now = audioCtx.currentTime;
-  const duration = 0.35;
 
-  // Short burst of filtered noise — like a droplet hitting water
-  const bufferSize = audioCtx.sampleRate * duration;
-  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < bufferSize; i++) {
-    data[i] = (Math.random() * 2 - 1);
-  }
+  // Pure sine oscillator — starts mid frequency, falls gently
+  // like a resonant water bowl being tapped
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
 
-  const source = audioCtx.createBufferSource();
-  source.buffer = buffer;
+  const baseFreq = 280 + Math.random() * 120; // 280–400 Hz, low and warm
+  osc.frequency.setValueAtTime(baseFreq, now);
+  osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.55, now + 1.2);
 
-  // Bandpass filter — gives it a wet, hollow quality
-  const filter = audioCtx.createBiquadFilter();
-  filter.type = 'bandpass';
-  filter.frequency.value = 800 + Math.random() * 400;
-  filter.Q.value = 0.8;
+  // Second harmonic — very quiet overtone for richness
+  const osc2 = audioCtx.createOscillator();
+  osc2.type = 'sine';
+  osc2.frequency.setValueAtTime(baseFreq * 2.1, now);
+  osc2.frequency.exponentialRampToValueAtTime(baseFreq * 1.1, now + 0.6);
 
-  // Low pass to soften it further
-  const lowpass = audioCtx.createBiquadFilter();
-  lowpass.type = 'lowpass';
-  lowpass.frequency.value = 1200;
-
-  // Gain envelope — quick attack, fast decay
   const gain = audioCtx.createGain();
   gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.04, now + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  gain.gain.linearRampToValueAtTime(1, now + 0.008); // near-instant attack
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.4); // long soft decay
 
-  source.connect(filter);
-  filter.connect(lowpass);
-  lowpass.connect(gain);
-  gain.connect(audioCtx.destination);
+  const gain2 = audioCtx.createGain();
+  gain2.gain.setValueAtTime(0, now);
+  gain2.gain.linearRampToValueAtTime(0.25, now + 0.008);
+  gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
 
-  source.start(now);
-  source.stop(now + duration);
+  osc.connect(gain);
+  osc2.connect(gain2);
+  gain.connect(masterGain);
+  gain2.connect(masterGain);
+
+  osc.start(now);
+  osc.stop(now + 1.5);
+  osc2.start(now);
+  osc2.stop(now + 0.8);
 }
 
 // --- Ripples ---
 const ripples = [];
 const MAX_RIPPLES = 18;
 let lastRipple = 0;
-const RIPPLE_INTERVAL = 120;
+const RIPPLE_INTERVAL = 130;
 
 function spawnRipple(x, y) {
   const now = performance.now();
@@ -135,13 +154,10 @@ function spawnRipple(x, y) {
   lastRipple = now;
   ripples.push({ x, y, maxR: 80 + Math.random() * 60, born: now, duration: 2200 + Math.random() * 800 });
   if (ripples.length > MAX_RIPPLES) ripples.shift();
-  playRippleSound();
+  playDroplet();
 }
 
-// Unlock audio + start ripples on first interaction
-function unlock(e) {
-  initAudio();
-}
+function unlock(e) { initAudio(); }
 document.addEventListener('click', unlock, { once: true });
 document.addEventListener('touchstart', unlock, { once: true });
 
@@ -171,7 +187,7 @@ function loop(now) {
     const t = Math.min((now - rp.born) / rp.duration, 1);
     if (t >= 1) { ripples.splice(i, 1); continue; }
     const r = rp.maxR * easeOut(t);
-    let alpha = t < 0.12 ? (t / 0.12) * 0.13 : (1 - ((t - 0.12) / 0.88)) * 0.13;
+    const alpha = t < 0.12 ? (t / 0.12) * 0.13 : (1 - ((t - 0.12) / 0.88)) * 0.13;
     for (let ring = 0; ring < 2; ring++) {
       const ringR = r * (ring === 0 ? 1 : 0.65);
       if (ringR <= 0) continue;
