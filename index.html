@@ -1,1 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sandL</title>
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=IM+Fell+English&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
+  body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #f5f4f0;
+    font-family: 'IM Fell English', serif;
+    cursor: none;
+  }
+
+  canvas#world {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  canvas#fish {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .cursor {
+    position: fixed;
+    width: 6px;
+    height: 6px;
+    background: #333;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 100;
+    transform: translate(-50%, -50%);
+    transition: transform 0.1s ease;
+  }
+
+  .content {
+    position: fixed;
+    bottom: 10vh;
+    left: 5vw;
+    z-index: 10;
+    max-width: 420px;
+  }
+
+  .logo {
+    font-family: 'Special Elite', monospace;
+    font-size: clamp(28px, 4vw, 42px);
+    color: #1a1a1a;
+    letter-spacing: -0.5px;
+    margin-bottom: 1.2rem;
+  }
+
+  .blurb {
+    font-family: 'IM Fell English', serif;
+    font-size: clamp(11px, 1.1vw, 13px);
+    color: #333;
+    line-height: 1.7;
+    max-width: 380px;
+  }
+
+  .circles {
+    position: fixed;
+    bottom: 8vh;
+    right: 5vw;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .circle-large {
+    position: absolute;
+    width: 90px;
+    height: 90px;
+    border: 1px solid #999;
+    border-radius: 50%;
+    right: 48px;
+    bottom: 0;
+  }
+
+  .circle-small {
+    position: absolute;
+    width: 38px;
+    height: 38px;
+    border: 1.5px solid #888;
+    border-radius: 50%;
+    right: 0;
+    bottom: 52px;
+  }
+
+  .circle-inner {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border: 1px solid #aaa;
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .tilt-hint {
+    display: none;
+    position: fixed;
+    bottom: 3vh;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'IM Fell English', serif;
+    font-size: 10px;
+    color: #aaa;
+    letter-spacing: 0.05em;
+    z-index: 10;
+  }
+
+  @media (max-width: 600px) {
+    body { cursor: auto; }
+    .cursor { display: none; }
+
+    .content {
+      top: 6vh;
+      bottom: auto;
+      left: 6vw;
+      right: 6vw;
+      max-width: 100%;
+    }
+
+    .logo {
+      font-size: 28px;
+      margin-bottom: 1rem;
+    }
+
+    .blurb {
+      font-size: 13px;
+      max-width: 100%;
+    }
+
+    .circles {
+      bottom: 6vh;
+      right: 4vw;
+    }
+
+    .circle-large {
+      width: 70px;
+      height: 70px;
+      right: 36px;
+    }
+
+    .circle-small {
+      width: 30px;
+      height: 30px;
+      right: 0;
+      bottom: 40px;
+    }
+
+    .tilt-hint { display: block; }
+  }
+</style>
+</head>
+<body>
+
+<div class="cursor" id="cursor"></div>
+
+<canvas id="world"></canvas>
+<canvas id="fish"></canvas>
+
+<div class="content">
+  <div class="logo">sandL</div>
+  <p class="blurb">A practice developed by Aki Fapohunda, Calvin Calica, Justin Calica &amp; Yoon Jeong. Projecting the future by collecting fragments of the past. Turning truth into fiction into material, space, body and experience. We hope not to locate lost futures and haunting past lives through recreation, but to offer new ways of living through interactions with our work in daily life.</p>
+</div>
+
+<div class="circles">
+  <div class="circle-large"></div>
+  <div class="circle-small">
+    <div class="circle-inner"></div>
+  </div>
+</div>
+
+<div class="tilt-hint">tilt to move</div>
+
+<script>
+const isMobile = window.innerWidth <= 600 || ('ontouchstart' in window);
+
+// --- World map canvas (faint background) ---
+const worldCanvas = document.getElementById('world');
+const wCtx = worldCanvas.getContext('2d');
+
+function resizeCanvases() {
+  worldCanvas.width = window.innerWidth;
+  worldCanvas.height = window.innerHeight;
+  fishCanvas.width = window.innerWidth;
+  fishCanvas.height = window.innerHeight;
+  drawWorld();
+}
+
+// Draw a very faint procedural landmass silhouette
+function drawWorld() {
+  const w = worldCanvas.width;
+  const h = worldCanvas.height;
+  wCtx.clearRect(0, 0, w, h);
+
+  // We'll draw soft blob shapes to mimic the faint map
+  const blobs = [
+    { x: 0.25, y: 0.28, rx: 0.22, ry: 0.18 },
+    { x: 0.48, y: 0.22, rx: 0.18, ry: 0.14 },
+    { x: 0.72, y: 0.30, rx: 0.16, ry: 0.13 },
+    { x: 0.15, y: 0.55, rx: 0.10, ry: 0.14 },
+    { x: 0.60, y: 0.55, rx: 0.14, ry: 0.12 },
+    { x: 0.82, y: 0.48, rx: 0.10, ry: 0.10 },
+    { x: 0.38, y: 0.62, rx: 0.08, ry: 0.07 },
+    { x: 0.90, y: 0.65, rx: 0.07, ry: 0.09 },
+    { x: 0.05, y: 0.38, rx: 0.08, ry: 0.12 },
+  ];
+
+  blobs.forEach(b => {
+    const grad = wCtx.createRadialGradient(
+      b.x * w, b.y * h, 0,
+      b.x * w, b.y * h, Math.max(b.rx * w, b.ry * h)
+    );
+    grad.addColorStop(0, 'rgba(190,188,182,0.28)');
+    grad.addColorStop(0.5, 'rgba(190,188,182,0.12)');
+    grad.addColorStop(1, 'rgba(190,188,182,0)');
+
+    wCtx.save();
+    wCtx.translate(b.x * w, b.y * h);
+    wCtx.scale(1, b.ry / b.rx);
+    wCtx.beginPath();
+    wCtx.arc(0, 0, b.rx * w, 0, Math.PI * 2);
+    wCtx.fillStyle = grad;
+    wCtx.fill();
+    wCtx.restore();
+  });
+}
+
+// --- Fish canvas ---
+const fishCanvas = document.getElementById('fish');
+const fCtx = fishCanvas.getContext('2d');
+
+const FISH_COUNT = isMobile ? 55 : 90;
+const fish = [];
+
+class Fish {
+  constructor() {
+    this.reset();
+  }
+
+  reset() {
+    this.x = Math.random() * window.innerWidth;
+    this.y = Math.random() * window.innerHeight;
+    this.vx = (Math.random() - 0.5) * 0.6;
+    this.vy = (Math.random() - 0.5) * 0.6;
+    this.length = 6 + Math.random() * 10;
+    this.alpha = 0.12 + Math.random() * 0.2;
+    this.angle = Math.atan2(this.vy, this.vx);
+    this.wobble = Math.random() * Math.PI * 2;
+    this.wobbleSpeed = 0.02 + Math.random() * 0.03;
+    this.speed = 0.3 + Math.random() * 0.5;
+  }
+
+  update(mx, my) {
+    this.wobble += this.wobbleSpeed;
+
+    if (isMobile) {
+      // tilt-based movement handled externally via tiltX/tiltY
+      this.vx += window.tiltX * 0.001;
+      this.vy += window.tiltY * 0.001;
+    } else {
+      // flee from cursor
+      const dx = this.x - mx;
+      const dy = this.y - my;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const fleeRadius = 120;
+
+      if (dist < fleeRadius && dist > 0) {
+        const force = (fleeRadius - dist) / fleeRadius;
+        this.vx += (dx / dist) * force * 1.8;
+        this.vy += (dy / dist) * force * 1.8;
+      }
+    }
+
+    // Gentle drift back to natural speed
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > 3) {
+      this.vx = (this.vx / speed) * 3;
+      this.vy = (this.vy / speed) * 3;
+    }
+    if (speed < 0.1) {
+      this.vx += (Math.random() - 0.5) * 0.1;
+      this.vy += (Math.random() - 0.5) * 0.1;
+    }
+
+    // Dampen
+    this.vx *= 0.98;
+    this.vy *= 0.98;
+
+    this.x += this.vx;
+    this.y += this.vy;
+
+    this.angle = Math.atan2(this.vy, this.vx);
+
+    // Wrap around edges
+    const pad = 20;
+    if (this.x < -pad) this.x = window.innerWidth + pad;
+    if (this.x > window.innerWidth + pad) this.x = -pad;
+    if (this.y < -pad) this.y = window.innerHeight + pad;
+    if (this.y > window.innerHeight + pad) this.y = -pad;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+
+    const wobbleAmount = Math.sin(this.wobble) * 0.3;
+    const l = this.length;
+
+    ctx.strokeStyle = `rgba(140, 138, 130, ${this.alpha})`;
+    ctx.lineWidth = 0.7;
+    ctx.lineCap = 'round';
+
+    // Body line
+    ctx.beginPath();
+    ctx.moveTo(-l * 0.5, 0);
+    ctx.quadraticCurveTo(0, wobbleAmount * l * 0.3, l * 0.5, 0);
+    ctx.stroke();
+
+    // Tail
+    ctx.beginPath();
+    ctx.moveTo(-l * 0.5, 0);
+    ctx.lineTo(-l * 0.8, -l * 0.2 + wobbleAmount * l * 0.2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-l * 0.5, 0);
+    ctx.lineTo(-l * 0.8, l * 0.2 + wobbleAmount * l * 0.2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+}
+
+for (let i = 0; i < FISH_COUNT; i++) {
+  fish.push(new Fish());
+}
+
+// Mouse / tilt tracking
+let mouseX = window.innerWidth / 2;
+let mouseY = window.innerHeight / 2;
+window.tiltX = 0;
+window.tiltY = 0;
+
+document.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  const cursor = document.getElementById('cursor');
+  cursor.style.left = mouseX + 'px';
+  cursor.style.top = mouseY + 'px';
+});
+
+if (isMobile) {
+  window.addEventListener('deviceorientation', e => {
+    window.tiltX = e.gamma || 0;
+    window.tiltY = e.beta || 0;
+  });
+
+  if (typeof DeviceOrientationEvent !== 'undefined' &&
+      typeof DeviceOrientationEvent.requestPermission === 'function') {
+    document.body.addEventListener('touchstart', () => {
+      DeviceOrientationEvent.requestPermission().catch(() => {});
+    }, { once: true });
+  }
+}
+
+// Animation loop
+function animate() {
+  fCtx.clearRect(0, 0, fishCanvas.width, fishCanvas.height);
+
+  fish.forEach(f => {
+    f.update(mouseX, mouseY);
+    f.draw(fCtx);
+  });
+
+  requestAnimationFrame(animate);
+}
+
+resizeCanvases();
+animate();
+
+window.addEventListener('resize', resizeCanvases);
+</script>
+</body>
+</html>
